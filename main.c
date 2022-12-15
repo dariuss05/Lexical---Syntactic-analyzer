@@ -4,13 +4,16 @@
 #include <ctype.h>
 #include <stdlib.h>
 
+
+/* Enums pentru asignarea atomilor cat si pentru afisarea acestora */
 enum { REAL, INT, STR, COMMA, COLON, SEMICOLON, LPAR, RPAR, FINISH, ADD, SUB, MUL, DIV, AND, OR, NOTEQ, NOT, EQUAL, ASSIGN, LESS, ID, VAR, FUNCTION, IF, ELSE, WHILE, END, RETURN, TYPE_INT, TYPE_REAL, TYPE_STR };
 
 char* atomsSTR[] = { "REAL", "INT", "STR", "COMMA", "COLON", "SEMICOLON", "LPAR", "RPAR", "FINISH", "ADD", "SUB", "MUL", "DIV", "AND", "OR", "NOTEQ", "NOT", "EQUAL", "ASSIGN","LESS", "ID", "VAR", "FUNCTION", "IF", "ELSE", "WHILE", "END", "RETURN", "TYPE_INT", "TYPE_REAL", "TYPE_STR" };
 
-char buffer_in[30001];
-char* cursor;
-int linie = 1;
+
+char buffer_in[30001]; /* Buffer pentru adaugarea atomilor*/
+char* cursor; /* Cursor pentru parcurgerea atomilor */
+int linie = 1; /* Variabila pentru linia curenta */
 
 typedef struct {
     int cod, linie;
@@ -21,15 +24,46 @@ typedef struct {
     };
 }Atom;
 
-Atom atoms[10000];
-int atomCount;
+Atom atoms[10000]; /* Vector de atomi */
+int atomCount; /* Numarul de atomi */
+int idxCrtAtom = 0; /* Atomul curent => pentru analiza sintactica */
 
+/* Functie de adaugare a atomilor in vector in analiza lexicala */
 void addToken(int code) {
     atoms[atomCount].cod = code;
     atoms[atomCount].linie = linie;
     atomCount++;
 }
 
+/* Functie de consumare a atomului curent in analiza sintactica */
+int consume(int code) {
+    if (atoms[idxCrtAtom].cod == code) {
+        idxCrtAtom++;
+        return 1;
+    }
+    return 0;
+}
+
+/* Declaratii functii pentru analiza sintactica */
+int program();
+int defVar();
+int baseType();
+int defFunc();
+int block();
+int funcParams();
+int funcParam();
+int instr();
+int expr();
+int exprLogic();
+int exprAssign();
+int exprComp();
+int exprAdd();
+int exprMul();
+int exprPrefix();
+int factor();
+
+
+/* Functie de identificarea atomilor in analiza lexicala */
 int getNextToken() {
     int state = 0, n = 0;
     char buffer_text[100];
@@ -329,10 +363,416 @@ int getNextToken() {
         default:
             printf("stare invalida: %d\n", state);
         }
-
     }
 }
 
+/* Functie de afisare a erori in analiza sintactica */
+void atomError(char* message, int linie) {
+    printf("\n%s, linia %d\n", message, atoms[idxCrtAtom].linie);
+    exit(1);
+}
+
+
+/* program ::= ( defVar | defFunc | block )* FINISH */
+int program() {
+    /* printf("%d program: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    for (;;) {
+        if (defVar()) {
+            /* ... */
+        }
+        else if (defFunc()) {
+            /* ... */
+        }
+        else if (block()) {
+            /* ... */
+        }
+        else {
+            break;
+        }
+    }
+    if (consume(FINISH)) {
+        return 1;
+    }
+    return 0;
+}
+
+
+/* defVar ::= VAR ID COLON baseType SEMICOLON */
+int defVar() {
+    /* printf("%d defVar: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (consume(VAR)) {
+        if (consume(ID)) {
+            if (consume(COLON)) {
+                if (baseType()) {
+                    if (consume(SEMICOLON)) {
+                        return 1;
+                    }
+                    else atomError("EROARE: Lipseste \";\" in declararea variabilei", atoms[idxCrtAtom].linie);
+                }
+                else atomError("EROARE: Lipseste tipul variabilei in declararea acesteia", atoms[idxCrtAtom].linie);
+            }
+            else atomError("EROARE: Lipseste \":\" in declararea variabilei", atoms[idxCrtAtom].linie);
+        }
+        else atomError("EROARE: Lipseste numele variabilei in declararea acesteia", atoms[idxCrtAtom].linie);
+    }
+    return 0;
+}
+
+
+/* baseType ::= TYPE_INT | TYPE_REAL | TYPE_STR */
+int baseType() {
+    /* printf("%d baseType: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (consume(TYPE_INT)) {
+        return 1;
+    }
+    else if (consume(TYPE_REAL)) {
+        return 1;
+    }
+    else if (consume(TYPE_STR)) {
+        return 1;
+    }
+    return 0;
+}
+
+
+/* defFunc ::= FUNCTION ID LPAR funcParams RPAR COLON baseType defVar* block END */
+int defFunc() {
+    /* printf("%d defFunc: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (consume(FUNCTION)) {
+        if (consume(ID)) {
+            if (consume(LPAR)) {
+                if (funcParams()) {
+                    if (consume(RPAR)) {
+                        if (consume(COLON)) {
+                            if (baseType()) {
+                                for (;;) {
+                                    if (defVar()) {
+                                        /* ... */
+                                    }
+                                    else {
+                                        break;
+                                    }
+                                }
+                                if (block()) {
+                                    if (consume(END)) {
+                                        return 1;
+                                    }
+                                    else atomError("EROARE: Lipseste keyword-ul \"end\" in definirea functiei", atoms[idxCrtAtom].linie);
+                                }
+                            }
+                            else atomError("EROARE: Lipseste tipul variabilei in declararea acesteia, in definirea functiei", atoms[idxCrtAtom].linie);
+                        }
+                        else atomError("EROARE: Lipseste \":\" in declararea variabilei, in definirea functiei", atoms[idxCrtAtom].linie);
+                    }
+                    else atomError("EROARE: Lipseste \")\", in definirea functiei", atoms[idxCrtAtom].linie);
+                }
+                else atomError("EROARE: Lipsesc parametrii functiei in definirea acesteia", atoms[idxCrtAtom].linie);
+            }
+            else atomError("EROAE: Lipseste \"(\", in definirea functiei", atoms[idxCrtAtom].linie);
+        }
+        else atomError("EROARE: Lipseste numele functiei in definirea acesteia", atoms[idxCrtAtom].linie);
+    }
+    return 0;
+}
+
+/* block ::= instr+ */
+int block() {
+    /* printf("%d block: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (instr()) {
+        for (;;) {
+            if (instr()) {
+                /* ... */
+            }
+            else break;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/* funcParams ::= ( funcParam ( COMMA funcParam )* )? */
+int funcParams() {
+    /* printf("%d funcParams: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (funcParam()) {
+        for (;;) {
+            if (consume(COMMA)) {
+                if (funcParam()) {
+                    return 1;
+                }
+            }
+            else {
+                break;
+            }
+        }
+        return 1;
+    }
+    return 1;
+}
+
+/* funcParam ::= ID COLON baseType */
+int funcParam() {
+    /* printf("%d funcParam: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (consume(ID)) {
+        if (consume(COLON)) {
+            if (baseType()) {
+                return 1;
+            }
+            else atomError("EROARE: Lipseste tipul variabilei in declararea acesteia, in parametrii functiei", atoms[idxCrtAtom].linie);
+        }
+        else atomError("EROARE: Lipseste \":\" in declararea variabilei, in parametrii functiei", atoms[idxCrtAtom].linie);
+    }
+    return 0;
+}
+
+/*
+instr ::= expr? SEMICOLON
+                        | IF LPAR expr RPAR block ( ELSE block )? END
+                        | RETURN expr SEMICOLON
+                        | WHILE LPAR expr RPAR block END
+*/
+int instr() {
+    /* printf("%d instr: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (expr()) {
+        /* ... */
+    }
+    if (consume(SEMICOLON)) {
+        return 1;
+    } 
+    else if (consume(IF)) {
+        if (consume(LPAR)) {
+            if (expr()) {
+                if (consume(RPAR)) {
+                    if (block()) {
+                        if (consume(ELSE)) {
+                            if (block()) { /* ... */ }
+                            else atomError("EROARE: Lipsesc instructiunile dupa keyword-ul ELSE", atoms[idxCrtAtom].linie);
+                        }
+                        if (consume(END)) {
+                            return 1;
+                        }
+                        else atomError("EROARE: Lipseste keyword-ul \"end\" din blocul IF", atoms[idxCrtAtom].linie);
+                    }
+                    else atomError("EROARE: Lipsesc instructiunile dupa keyword-ul ELSE", atoms[idxCrtAtom].linie);
+                }
+                else atomError("EROARE: Lipseste \")\" dupa keyword-ul IF", atoms[idxCrtAtom].linie);;
+            }
+            else atomError("EROARE: Lipseste conditia din IF", atoms[idxCrtAtom].linie);
+        }
+        else atomError("EROAE: Lipseste \"(\" inainte de keyword-ul IF", atoms[idxCrtAtom].linie);
+    }
+    else if (consume(RETURN)) {
+        if (expr()) {
+            if (consume(SEMICOLON)) {
+                return 1;
+            }
+            else atomError("EROARE: Lipseste \";\" dupa keyword-ul RETURN", atoms[idxCrtAtom].linie);
+        }
+        else atomError("EROARE: Lipseste instructiunea dupa keyword-ul RETURN", atoms[idxCrtAtom].linie);
+    }
+    else if (consume(WHILE)) {
+        if (consume(LPAR)) {
+            if (expr()) {
+                if (consume(RPAR)) {
+                    if (block()) {
+                        if (consume(END)) {
+                            return 1;
+                        }
+                        else atomError("EROARE: Lipseste keyword-ul \"end\" din blocul WHILE", atoms[idxCrtAtom].linie);
+                    }
+                    else atomError("EROARE: Eroare in blocul while", atoms[idxCrtAtom].linie);
+                }
+                else atomError("EROARE: Lipseste \")\" dupa keyword-ul WHILE", atoms[idxCrtAtom].linie);
+            }
+            else atomError("EROARE: Lipseste expresia din blocul WHILE", atoms[idxCrtAtom].linie);
+        }
+        else atomError("EROARE: Lipseste \")\" inainte de keyword-ul WHILE", atoms[idxCrtAtom].linie);
+    }
+    return 0;
+}
+
+
+/* expr ::= exprLogic */
+int expr() {
+    /* printf("%d exprLogic: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    return exprLogic();
+}
+
+
+/* exprLogic ::= exprAssign ( ( AND | OR ) exprAssign )* */
+int exprLogic() {
+    /* printf("%d exprLogic: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (exprAssign()) {
+        for (;;) {
+            if (consume(AND)) {
+                if (exprAssign()) {
+                    return 1;
+                }
+                else atomError("EROARE: Lipseste asignarea variabilei", atoms[idxCrtAtom].linie);
+            }
+            else if (consume(OR)) {
+                if (exprAssign()) {
+                    return 1;
+                }
+                else atomError("EROARE: Lipseste asignarea variabilei", atoms[idxCrtAtom].linie);
+            }
+            else {
+                break;
+            }
+        }
+        return 1;
+    }
+    return 0;
+}
+
+
+/* exprAssign ::= ( ID ASSIGN )? exprComp */
+int exprAssign() {
+    /* printf("%d exprAssign: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    int startIDx = idxCrtAtom;
+    if (consume(ID)) {
+        if (consume(ASSIGN)) {
+            if (exprComp()) {
+                return 1;
+            }
+            else atomError("EROARE: Lipseste expresie dupa EGAL", atoms[idxCrtAtom].linie);
+        } 
+        idxCrtAtom = startIDx;
+    }
+    if (exprComp()) {
+        return 1;
+    }
+    return 0;
+}
+
+
+/* exprComp ::= exprAdd ( ( LESS | EQUAL ) exprAdd )? */
+int exprComp() {
+    /* printf("%d exprComp: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (exprAdd()) {
+        if (consume(LESS)) {
+            if (exprAdd()) {
+                return 1;
+            }
+            else atomError("EROARE: Expresie invalida dupa <", atoms[idxCrtAtom].linie);
+        }
+        else if (consume(EQUAL)) {
+            if (exprAdd()) {
+                return 1;
+            }
+            else atomError("EROARE: Expresie din conditie nerecunoscuta", atoms[idxCrtAtom].linie);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/* exprAdd ::= exprMul ( ( ADD | SUB ) exprMul )* */
+int exprAdd() {
+    /* printf("%d exprAdd: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (exprMul()) {
+        if (consume(ADD)) {
+            if (exprMul()) {
+                return 1;
+            }
+            else atomError("EROARE: Expresie matematica nerecunoscuta (+)", atoms[idxCrtAtom].linie);
+        }
+        else if (consume(SUB)) {
+            if (exprMul()) {
+                return 1;
+            }
+            else atomError("EROARE: Expresie matematica nerecunoscuta (-)", atoms[idxCrtAtom].linie);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/* exprMul ::= exprPrefix ( ( MUL | DIV ) exprPrefix )* */
+int exprMul() {
+    /* printf("%d exprMul: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (exprPrefix()) {
+        if (consume(MUL)) {
+            if (exprPrefix()) {
+                return 1;
+            }
+            else atomError("EROARE: Expresie matematica nerecunoscuta (*)", atoms[idxCrtAtom].linie);
+        }
+        else if (consume(DIV)) {
+            if (exprPrefix()) {
+                return 1;
+            }
+            else atomError("EROARE: Expresie matematica nerecunoscuta (/)", atoms[idxCrtAtom].linie);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/* exprPrefix ::= ( SUB | NOT )? factor */
+int exprPrefix() {
+    /* printf("%d exprPrefix: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (consume(SUB) || consume(NOT)) {
+        /* ... */
+    }
+    if (factor()) {
+        return 1;
+    }
+    return 0;
+}
+
+
+/* factor ::= INT
+                | REAL
+                | STR
+                | LPAR expr RPAR
+                | ID ( LPAR ( expr ( COMMA expr )* )? RPAR )?
+*/
+int factor() {
+    /* printf("%d factor: %s\n", atoms[idxCrtAtom].linie, atomsSTR[atoms[idxCrtAtom].cod]); */
+    if (consume(INT)) {
+        return 1;
+    }
+    if (consume(REAL)) {
+        return 1;
+    }
+    if (consume(STR)) {
+        return 1;
+    }
+    if (consume(LPAR)) {
+        if (expr()) {
+            if (consume(RPAR)) {
+                return 1;
+            }
+            else atomError("EROARE: Lipseste \")\" in expresie", atoms[idxCrtAtom].linie);
+        }
+        else atomError("EROARE: Lipseste expresia", atoms[idxCrtAtom].linie);
+    }
+    else if (consume(ID)) {
+        if (consume(LPAR)) {
+            if (expr()) {
+                for (;;) {
+                    if (consume(COMMA)) {
+                        if (expr()) {
+                            /* ... */
+                        }
+                        else atomError("EROARE: Lipseste \",\" in expresie", atoms[idxCrtAtom].linie);
+                    }
+                    else {
+                        break;
+                    }
+                }
+            }
+            if (consume(RPAR)) {
+                return 1;
+            }
+            else atomError("EROARE: Lipseste \")\" in expresie", atoms[idxCrtAtom].linie);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/* Functie de afisarea atomilor in analiza lexicala */
 void displayAtoms() {
     for (int i = 0; i < atomCount; i++) {
         printf("linie: %d, cod: %s", atoms[i].linie, atomsSTR[atoms[i].cod]);
@@ -366,11 +806,14 @@ int main() {
     fclose(file);
     cursor = buffer_in;
     while (getNextToken() != FINISH) {
-        //
+        /* ... */
     }
     displayAtoms();
-
+    if (program()) {
+        printf("Sintaxa OK");
+    }
+    else {
+        printf("Eroare de sintaxa");
+    }
+    return 0;
 }
-
-
-
